@@ -185,11 +185,57 @@ class HttpInformer:
             url: Target URL (must start with http:// or https://)
             user: Username in format [domain/]username or domain\\username
         """
-        self.url = url.rstrip('/')
+        self.url = url
         self.is_https = url.lower().startswith('https://')
         
         # Parse and validate domain/username
         self.domain, self.username = self.parse_domain_user(user)
+
+    def _get_adcs_hint_url(self) -> str:
+        """Return the canonical ADCS web enrollment path for the current host."""
+        parsed = urlparse(self.url)
+        return f"{parsed.scheme}://{parsed.netloc}/certsrv/"
+
+    def verify_ntlm_required(self) -> bool:
+        """
+        Verify that the target URL actually requires NTLM authentication.
+        Sends an unauthenticated request and checks for 401 with NTLM WWW-Authenticate header.
+        Also follows redirects and updates self.url to the final URL if redirected.
+
+        Returns:
+            True if the endpoint requires NTLM auth, False otherwise.
+        """
+        try:
+            if self.is_https:
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            response = requests.get(self.url, verify=False, allow_redirects=True)
+
+            # Update URL to final destination after redirects (e.g., /certsrv -> /certsrv/)
+            if response.url != self.url:
+                logger.debug(f"URL redirected: {self.url} -> {response.url}")
+                self.url = response.url
+
+            if response.status_code == 401:
+                auth_headers = response.headers.get('WWW-Authenticate', '')
+                if 'NTLM' in auth_headers or 'Negotiate' in auth_headers:
+                    return True
+                else:
+                    logger.error(f"Endpoint requires authentication but not NTLM/Negotiate (WWW-Authenticate: {auth_headers})")
+                    return False
+            else:
+                logger.error(
+                    f"Endpoint returned {response.status_code} without authentication - "
+                    f"this URL does not require NTLM auth and cannot be used for EPA testing. "
+                    f"For ADCS, try: --url {self._get_adcs_hint_url()}"
+                )
+                return False
+        except requests.exceptions.SSLError as e:
+            logger.debug(f"TLS/SSL error during preflight: {e}")
+            logger.error("TLS/SSL error connecting to target - check the URL and try again")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Could not connect to {self.url}: {e}")
+            return False
 
     def test_epa_connection(self, password: Optional[str], hashes: Optional[str],
                            send_cbt: bool = True, custom_cert_hash: Optional[bytes] = None,
