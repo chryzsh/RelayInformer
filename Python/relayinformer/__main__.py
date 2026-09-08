@@ -38,3 +38,7 @@ def main(
     ctx.obj = {
         "debug": debug
     }
+
+
+if __name__ == "__main__":
+    app()

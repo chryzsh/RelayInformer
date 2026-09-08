@@ -71,6 +71,10 @@ def main(
     try:
         with HttpInformer(url, user) as informer:
 
+            # Verify endpoint requires NTLM auth before proceeding
+            if not informer.verify_ntlm_required():
+                raise typer.Exit(1)
+
             # Prompt for password if neither password nor hashes provided
             if password is None and hashes is None:
                 password = getpass("Password:")
