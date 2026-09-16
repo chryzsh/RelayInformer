@@ -7,6 +7,8 @@ Status legend: `OPEN`, `FIXED`, `WONTFIX` (with reason).
 
 ## BUG-1 (High): `self.is_https` goes stale after a redirect, desyncing EPA test logic
 
+Status: FIXED (b96faa6)
+
 - File: `Python/relayinformer/informers/HttpInformer.py`, `verify_ntlm_required` (~line 199-238)
 - File: `Python/relayinformer/commands/http.py`, `main` (~line 64-65)
 
@@ -31,6 +33,8 @@ instead of its own pre-redirect local variable.
 
 ## BUG-2 (High): `LdapInformer.RunLdap` silently returns `None` on unrecognized bind errors, misreported as "not enforced"
 
+Status: FIXED (6db8ec9)
+
 - File: `Python/relayinformer/informers/LdapInformer.py`, `RunLdap` (line 25-42)
 - File: `Python/relayinformer/commands/ldap.py`, `main` (line 126-130)
 
@@ -47,6 +51,8 @@ have the caller report that distinctly instead of folding it into "not
 enforced".
 
 ## BUG-3 (Medium): `DoesLdapsCompleteHandshake` has the same implicit-`None` pattern, plus an un-caught `connect()`
+
+Status: FIXED (6db8ec9)
 
 - File: `Python/relayinformer/informers/LdapInformer.py`, `DoesLdapsCompleteHandshake` (line 52-83)
 
@@ -68,6 +74,9 @@ distinct caller message, and wrap `connect()` in the same try/except so the
 socket is always closed and connection failures get a clear message.
 
 ## BUG-4 (Low-Medium): identity comparison against a string sentinel default
+
+Status: FIXED (1d97479) — resolved by deleting the dead branch entirely rather
+than swapping `is not` for `!=`, since the branch had no effect either way.
 
 - File: `Python/relayinformer/commands/ldap.py`, line 88-93
 
@@ -96,6 +105,8 @@ noted for cleanup.
 
 ## BUG-5 (Low): fragile trailing-character strip in `ResolveDCs`
 
+Status: FIXED (1d97479)
+
 - File: `Python/relayinformer/informers/LdapInformer.py`, `ResolveDCs` (line 150-166)
 
 ```python
@@ -112,6 +123,8 @@ trailing `l` characters stripped). Fix: strip the trailing dot explicitly
 with `.rstrip(".")`.
 
 ## BUG-6 (Low-Medium): `SmbInformer.Run()` retries on *any* exception, doubling timeouts on unreachable hosts
+
+Status: FIXED (2648666)
 
 - File: `Python/relayinformer/informers/SmbInformer.py`, `Run` (line 46-49)
 
@@ -135,6 +148,8 @@ connectivity errors propagate immediately on the first attempt.
 
 ## BUG-7 (Medium): MSSQL `--user` help text promises an optional domain the parser doesn't allow
 
+Status: FIXED (38946d1)
+
 - File: `Python/relayinformer/commands/mssql.py`, line 18 (help text) and docstring line 28-30
 - File: `Python/relayinformer/informers/MssqlInformer.py`, `parse_domain_user` (line 193-214)
 
@@ -150,6 +165,8 @@ Fix: correct the help text/docstring to state that domain is required for
 needs a domain and relaxing the validation would be the riskier change.
 
 ## BUG-8 (Low): explicit empty-string password rejected as "no credential provided"
+
+Status: FIXED (5539453)
 
 - File: `Python/relayinformer/informers/HttpInformer.py`, `test_epa_connection` (line 258-274)
 
