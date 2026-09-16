@@ -61,19 +61,22 @@ def main(
 
     # Warn about credentials requirement
 
-    is_https = url.lower().startswith('https://')
-    protocol = "HTTPS" if is_https else "HTTP"
-    
-    logger.info(f"Testing EPA enforcement level for {protocol} service at {url} as {user}")
-    
+    protocol = "HTTPS" if url.lower().startswith('https://') else "HTTP"
 
-    
+    logger.info(f"Testing EPA enforcement level for {protocol} service at {url} as {user}")
+
+
+
     try:
         with HttpInformer(url, user) as informer:
 
             # Verify endpoint requires NTLM auth before proceeding
             if not informer.verify_ntlm_required():
                 raise typer.Exit(1)
+
+            # verify_ntlm_required() may have followed a redirect that
+            # changed the scheme, so use the informer's post-redirect value
+            is_https = informer.is_https
 
             # Prompt for password if neither password nor hashes provided
             if password is None and hashes is None:

@@ -214,6 +214,7 @@ class HttpInformer:
             if response.url != self.url:
                 logger.debug(f"URL redirected: {self.url} -> {response.url}")
                 self.url = response.url
+                self.is_https = self.url.lower().startswith('https://')
 
             if response.status_code == 401:
                 auth_headers = response.headers.get('WWW-Authenticate', '')
