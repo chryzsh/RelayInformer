@@ -124,12 +124,18 @@ def main(
         with console.status(f"[bold]Checking {dc}...\n", spinner="flip"):
             try:
                 if method == Method.BOTH:
-                    if informer.RunLdap(dc):
+                    ldapSigningEnforced = informer.RunLdap(dc)
+                    if ldapSigningEnforced is None:
+                        logger.error(f"\\[{dc}] Could not determine LDAP signing enforcement")
+                    elif ldapSigningEnforced:
                         logger.info(f"\\[{dc}] (LDAP) server [red]enforcing[/] signing requirements", extra=OBJ_EXTRA_FMT)
                     else:
                         logger.info(f"\\[{dc}] (LDAP) SERVER SIGNING REQUIREMENTS [green]NOT ENFORCED[/]!", extra=OBJ_EXTRA_FMT)
                     
-                if LdapInformer.DoesLdapsCompleteHandshake(dc):
+                ldapsHandshakeCompletes = LdapInformer.DoesLdapsCompleteHandshake(dc)
+                if ldapsHandshakeCompletes is None:
+                    logger.error(f"\\[{dc}] Could not determine whether LDAPS is configured")
+                elif ldapsHandshakeCompletes:
                     ldapsChannelBindingAlwaysCheck = informer.RunLdapsNoEpa(dc)
                     ldapsChannelBindingWhenSupportedCheck = asyncio.run(
                         informer.RunLdapsWithEpa(dc, timeout)

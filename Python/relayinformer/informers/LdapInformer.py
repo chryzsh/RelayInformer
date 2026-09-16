@@ -23,6 +23,7 @@ class LdapInformer:
     #   are enforced based on potential errors during the bind attempt 
     #
     def RunLdap(self, target):
+        """Returns True if signing is enforced, False if not, None if undetermined."""
         ldapServer = ldap3.Server(
             target, use_ssl=False, port=389, get_info=ldap3.ALL)
         ldapConn = ldap3.Connection(
@@ -37,6 +38,7 @@ class LdapInformer:
 
             else:
                 logger.error("UNEXPECTED ERROR: " + ldapConn_result_str)
+                return None #could not determine enforcement from this error
         else:
             #LDAPS bind successful
             return False #because LDAP server signing requirements are not enforced
@@ -51,6 +53,8 @@ class LdapInformer:
     #
     @staticmethod
     def DoesLdapsCompleteHandshake(target):
+        """Returns True if the handshake completed (or was cert-verification-only),
+        False if LDAPS is likely not configured, None if the outcome is undetermined."""
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(5)
 
@@ -64,23 +68,22 @@ class LdapInformer:
             server_hostname=target,
             do_handshake_on_connect=False
         )
-        ssl_sock.connect((target, 636))
         try:
+            ssl_sock.connect((target, 636))
             ssl_sock.do_handshake()
-            ssl_sock.close()
             return True
         except Exception as e:
             # Treat cert verification errors as a sign that TLS is enabled
             if isinstance(e, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(e):
-                ssl_sock.close()
                 return True
             # Timeouts indicate LDAPS is likely not configured
             if isinstance(e, (TimeoutError, socket.timeout)) or "handshake operation timed out" in str(e):
-                ssl_sock.close()
                 return False
             else:
                 logger.error("Unexpected error during LDAPS handshake: " + str(e))
-                ssl_sock.close()
+                return None
+        finally:
+            ssl_sock.close()
 
     #
     # Conduct a bind to LDAPS and determine if channel binding is enforced based 
