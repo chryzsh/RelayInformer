@@ -85,16 +85,9 @@ def main(
         logger.warning("Using BOTH method requires a username parameter")
         raise typer.Exit(1)
     
-    if method == Method.BOTH:
-        if nthash is not None:
-            nthash = f"aad3b435b51404eeaad3b435b51404ee:{nthash}" 
-        
-        elif password is not DEFAULTPASS:
-            pass
+    if method == Method.BOTH and nthash is not None:
+        nthash = f"aad3b435b51404eeaad3b435b51404ee:{nthash}"
 
-        else:
-            logger.warning("Using BOTH method requires a password or NT hash")
-        
     if method == Method.BOTH and password == DEFAULTPASS and nthash is None:
         password = getpass.getpass(prompt="Password: ")
     
