@@ -1,7 +1,7 @@
 import contextlib
 
 from impacket.smb3 import SMB3
-from impacket.smbconnection import SMBConnection
+from impacket.smbconnection import SMBConnection, SessionError
 from impacket.smb3structs import (
     SMB2_DIALECT_30,
     SMB2_DIALECT_311,
@@ -45,7 +45,11 @@ class SmbInformer:
         # that also covers SMB1 and SMB2.
         try:
             conn = SMBConnection(self.target, self.target, sess_port=self.port, timeout=self.timeout, preferredDialect=SMB2_DIALECT_311)
-        except Exception:
+        except SessionError:
+            # Server rejected the requested dialect; fall back to a wildcard
+            # negotiate. Connectivity failures (timeout, refused, ...) are
+            # not caught here so they surface immediately instead of being
+            # retried and doubling the wait on an unreachable host.
             conn = SMBConnection(self.target, self.target, sess_port=self.port, timeout=self.timeout)
         try:
             inner = conn._SMBConnection
