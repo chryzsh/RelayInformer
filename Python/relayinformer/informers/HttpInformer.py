@@ -12,6 +12,9 @@ import urllib3
 
 from relayinformer.logger import logger
 
+# Seconds to wait for the unauthenticated preflight request (connect and read)
+PREFLIGHT_TIMEOUT = 10
+
 
 class CustomAvHttpNtlmAuth(HttpNtlmAuth):
     """
@@ -208,7 +211,7 @@ class HttpInformer:
         try:
             if self.is_https:
                 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            response = requests.get(self.url, verify=False, allow_redirects=True)
+            response = requests.get(self.url, verify=False, allow_redirects=True, timeout=PREFLIGHT_TIMEOUT)
 
             # Update URL to final destination after redirects (e.g., /certsrv -> /certsrv/)
             if response.url != self.url:
