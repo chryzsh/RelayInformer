@@ -2,7 +2,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from relayinformer.informers.HttpInformer import HttpInformer
+import requests
+
+from relayinformer.informers.HttpInformer import PREFLIGHT_TIMEOUT, HttpInformer
 
 
 class HttpInformerTests(unittest.TestCase):
@@ -25,8 +27,18 @@ class HttpInformerTests(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(informer.url, "https://pki.domain.local/certsrv/")
         mock_get.assert_called_once_with(
-            "https://pki.domain.local/certsrv", verify=False, allow_redirects=True
+            "https://pki.domain.local/certsrv",
+            verify=False,
+            allow_redirects=True,
+            timeout=PREFLIGHT_TIMEOUT,
         )
+
+    @patch("relayinformer.informers.HttpInformer.requests.get")
+    def test_verify_ntlm_required_fails_on_timeout(self, mock_get):
+        mock_get.side_effect = requests.exceptions.ReadTimeout("read timed out")
+        informer = HttpInformer("https://pki.domain.local/certsrv/", "domain/user")
+
+        self.assertFalse(informer.verify_ntlm_required())
 
     @patch("relayinformer.informers.HttpInformer.requests.get")
     def test_verify_ntlm_required_rejects_non_authenticating_endpoint(self, mock_get):
