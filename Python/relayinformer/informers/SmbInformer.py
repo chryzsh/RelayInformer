@@ -1,7 +1,9 @@
 import contextlib
 
+from impacket import smb3
+from impacket.nmb import NetBIOSError
 from impacket.smb3 import SMB3
-from impacket.smbconnection import SMBConnection, SessionError
+from impacket.smbconnection import SMBConnection
 from impacket.smb3structs import (
     SMB2_DIALECT_30,
     SMB2_DIALECT_311,
@@ -43,13 +45,19 @@ class SmbInformer:
         # negotiate. Servers that do not support it will reject the
         # single-dialect request, so fall back to a wildcard negotiate
         # that also covers SMB1 and SMB2.
+        #
+        # Only retry when the server answered but refused the dialect:
+        #   - smb3.SessionError: the server sent an error status (for example
+        #     STATUS_NOT_SUPPORTED). impacket raises this class here, not
+        #     smbconnection.SessionError.
+        #   - NetBIOSError: the server closed the connection after the
+        #     request, which SMB1-only servers do.
+        # A failed TCP connect (refused, unreachable, timeout) raises OSError
+        # and is not retried, so an unreachable host fails after one timeout.
         try:
             conn = SMBConnection(self.target, self.target, sess_port=self.port, timeout=self.timeout, preferredDialect=SMB2_DIALECT_311)
-        except SessionError:
-            # Server rejected the requested dialect; fall back to a wildcard
-            # negotiate. Connectivity failures (timeout, refused, ...) are
-            # not caught here so they surface immediately instead of being
-            # retried and doubling the wait on an unreachable host.
+        except (smb3.SessionError, NetBIOSError) as e:
+            logger.debug(f"{self.target} refused SMB 3.1.1 ({e}), retrying with a wildcard negotiate")
             conn = SMBConnection(self.target, self.target, sess_port=self.port, timeout=self.timeout)
         try:
             inner = conn._SMBConnection
