@@ -24,7 +24,7 @@ explicitly below rather than described as lab-verified.
 
 ## BUG-1 (High): `self.is_https` goes stale after a redirect, desyncing EPA test logic
 
-Status: FIXED (b96faa6)
+Status: FIXED (1a3807d)
 
 Verify: no reachable lab host currently serves both HTTP and HTTPS to force a
 real cross-scheme redirect, so this was driven through the real
@@ -60,7 +60,7 @@ instead of its own pre-redirect local variable.
 
 ## BUG-2 (High): `LdapInformer.RunLdap` silently returns `None` on unrecognized bind errors, misreported as "not enforced"
 
-Status: FIXED (6db8ec9)
+Status: FIXED (4ea00cc)
 
 Verify: this lab's DC returns the same generic invalid-credentials error for
 ordinary bad-username/bad-password misuse (already handled), so an
@@ -93,7 +93,7 @@ enforced".
 
 ## BUG-3 (Medium): `DoesLdapsCompleteHandshake` has the same implicit-`None` pattern, plus an un-caught `connect()`
 
-Status: FIXED (6db8ec9)
+Status: FIXED (4ea00cc)
 
 Verify: drove the real CLI end-to-end with the socket/`ssl` layer mocked to
 raise a generic (non-cert, non-timeout) handshake exception. Pre-fix: CLI
@@ -127,8 +127,10 @@ socket is always closed and connection failures get a clear message.
 
 ## BUG-4 (Low-Medium): identity comparison against a string sentinel default
 
-Status: FIXED (1d97479) — resolved by deleting the dead branch entirely rather
+Status: FIXED (59149e2) — resolved by deleting the dead branch entirely rather
 than swapping `is not` for `!=`, since the branch had no effect either way.
+Upstream PR #4 (merged) also replaced this block, so the bug no longer exists
+on upstream main.
 
 Verify: not behaviorally testable — the branch was dead code (see above), so
 there is no external outcome pre- vs. post-fix to observe. Confirmed by
@@ -163,7 +165,7 @@ noted for cleanup.
 
 ## BUG-5 (Low): fragile trailing-character strip in `ResolveDCs`
 
-Status: FIXED (1d97479)
+Status: FIXED (59149e2)
 
 Verify: ran the real SRV discovery against the live lab DC (`ResolveDCs`
 against dc01, 192.0.2.141, `contoso.local`) pre- and post-fix — both returned the
@@ -192,7 +194,8 @@ with `.rstrip(".")`.
 
 ## BUG-6 (Low-Medium): `SmbInformer.Run()` retries on *any* exception, doubling timeouts on unreachable hosts
 
-Status: FIXED (2648666)
+Status: FIXED (6b35194; same code as chrisr-smb-signing-check 7fc2f8a). The
+first fix (aec29d5) was wrong, see the note at the end of this section.
 
 Verify: ran the real `smb` command with `--timeout 5` against an unused,
 black-holed lab IP (192.0.2.200, confirmed to hang rather than immediately
@@ -223,9 +226,31 @@ is what actually surfaces to the user, obscuring the real cause.
 Fix: narrow the `except` to `impacket.smbconnection.SessionError` so
 connectivity errors propagate immediately on the first attempt.
 
+Note on the first fix (aec29d5): it caught `impacket.smbconnection.SessionError`,
+but impacket never raises that class here. With `preferredDialect`,
+`SMBConnection.negotiateSession()` builds `smb3.SMB3` directly and does not
+translate its exceptions. A refused NEGOTIATE raises `impacket.smb3.SessionError`
+(from `SMB2Packet.isValidAnswer()`), and an SMB1-only server that closes the
+connection raises `impacket.nmb.NetBIOSError`. The two `SessionError` classes are
+unrelated. So the fallback never ran, and every host without SMB 3.1.1 failed
+with an error.
+
+The correct fix catches `(smb3.SessionError, nmb.NetBIOSError)`. A failed TCP
+connect raises `OSError`, which is still not retried. Tested:
+
+| Target | Pre-fix (6df0d65) | First fix (aec29d5) | Correct fix |
+|--------|-------------------|---------------------|-------------|
+| Samba 4.20, max protocol SMB3_00 | 3.0 verdict | `smb3.SessionError: STATUS_NOT_SUPPORTED` | 3.0 verdict |
+| Samba 4.20, NT1 only | 1.0 verdict | `nmb.NetBIOSError: Error while reading from remote` | 1.0 verdict |
+| Unreachable host, `--timeout 5` | 10.0s | not run (one attempt by code reading) | 5.0s |
+| Lab DC (3.1.1) | not run | not run | 3.1.1, signing required |
+
 ## BUG-7 (Medium): MSSQL `--user` help text promises an optional domain the parser doesn't allow
 
-Status: FIXED (38946d1)
+Status: PARTIAL (6eb0fa2). The option help and docstrings are fixed. Two
+examples still show a domain-less user, which fails validation:
+`commands/mssql.py` line 30 (`-u admin`, printed by `mssql --help`) and
+`Python/README.md` (`-u admin`, line 66 here, 69 on upstream main).
 
 Verify: `mssql --help` now shows "Username in format domain/username (domain
 required)". Ran the real `mssql` command against the live MSSQL host
@@ -252,7 +277,7 @@ needs a domain and relaxing the validation would be the riskier change.
 
 ## BUG-8 (Low): explicit empty-string password rejected as "no credential provided"
 
-Status: FIXED (5539453)
+Status: FIXED (9a8f07a)
 
 Verify: ran the real `http` command with `--password ""` against the live
 NTLM-protected ADCS endpoint (`http://192.0.2.140/certsrv/`, lab-a
@@ -282,3 +307,81 @@ and gets rejected as if no credential were given at all.
 
 Fix: use `password is None and not hashes` so an explicit empty string is
 treated as a real (blank) password.
+
+## N-1 (High): `--nthash` is never used for the LDAP bind
+
+Status: OPEN (upstream bug)
+
+- File: `Python/relayinformer/commands/ldap.py`, `main` (upstream main line 90-91 and 114)
+
+```python
+if check_signing:
+    if nthash is not None:
+        nthash = f"aad3b435b51404eeaad3b435b51404ee:{nthash}"
+    ...
+informer = LdapInformer(fqdn, user, password)
+```
+
+The command builds the `LM:NT` string in `nthash`, then never uses it.
+`LdapInformer` gets `password`, which is still the `DEFAULTPASS` placeholder
+(`"defaultpass"`) when the user gives `-nh` and no `-p`. With
+`--method BOTH -u alice -nh <hash>`, the LDAP bind sends the password
+`defaultpass`. The DC answers with `data 52e` (invalid credentials), the tool
+reports invalid credentials, and the DC records a failed logon for the account.
+Pass-the-hash for the signing check does not work at all.
+
+`ldap3` NTLM accepts an `LM:NT` hash string as the password, so the fix is to
+pass the hash to `LdapInformer` when it is set. Check the other users of
+`self.password` too: `RunLdapsWithEpa` builds an msldap URL with
+`ldaps+ntlm-password://`, which expects a password, not a hash.
+
+## N-2 (Medium): "Invalid credentials - aborting" does not abort
+
+Status: OPEN (upstream bug)
+
+- File: `Python/relayinformer/informers/LdapInformer.py`, `RunLdap` (upstream main line 44)
+- File: `Python/relayinformer/commands/ldap.py`, per-DC loop (upstream main line 165)
+
+```python
+# LdapInformer.RunLdap
+elif "data 52e" in ldapConn_result_str or "data 532" in ldapConn_result_str:
+    logger.warning(ldapConn_result_str)
+    raise typer.Exit("Invalid credentials - aborting to prevent unnecessary authentication")
+
+# commands/ldap.py
+for dc in dc_list:
+    ...
+        try:
+            ...
+        except Exception as e:
+            logger.error(f"[{dc}] {str(e)}")
+```
+
+`typer.Exit` is `click.exceptions.Exit`, which subclasses `RuntimeError` and so
+`Exception` (checked with click 8.1.8). The loop's `except Exception` catches
+it, logs `[dc] Invalid credentials - aborting to prevent unnecessary
+authentication` as an error, skips the rest of that DC's checks, and goes on
+to the next DC: every other DC is tried with the same bad credentials. The log line says
+"aborting" while the tool keeps going. The abort exists to stop
+exactly that, since each attempt is another failed logon and can lock the
+account out.
+
+Also, `typer.Exit` takes an exit code, not a message. Here `exit_code` is the
+string `"Invalid credentials - aborting ..."`.
+
+## N-3 (Low): HTTP preflight request has no timeout
+
+Status: FIXED (chrisr-http-eparun-fixes 2647068). Fork-only code.
+
+- File: `Python/relayinformer/informers/HttpInformer.py`, `verify_ntlm_required`
+
+`requests.get()` had no `timeout`, so a server that accepts the connection and
+never answers made the `http` command hang. The fix adds
+`timeout=PREFLIGHT_TIMEOUT` (10 seconds). Tested against a local server that
+accepts and never replies: before the fix the command was still waiting when
+killed at 30s. After the fix it fails at 10s with `Read timed out. (read
+timeout=10)`.
+
+`test_epa_connection()` has the same gap (`session.get()` with no timeout,
+upstream main `HttpInformer.py` line 253). That one is in upstream code and is
+still OPEN.
